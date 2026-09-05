@@ -33,6 +33,16 @@ uv run pytest                    # 5. 단위 테스트 (외부 API 호출 없음
 # uv run python -m eval.run      # 6. Eval (작성 예정)
 ```
 
+같은 작업을 `make` 로도 실행할 수 있다 (`make help` 로 목록 확인):
+
+```bash
+make install && make env      # 설치 + .env 생성
+make ingest-reset             # 인덱싱
+make dev                      # 서버 (자동 리로드)
+make test                     # 테스트
+make ask Q="교권보호위원회 구성은?"   # 질의 전송
+```
+
 질의 예시:
 
 ```bash
