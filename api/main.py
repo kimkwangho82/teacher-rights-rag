@@ -1,10 +1,9 @@
-import logging
-
 from fastapi import FastAPI
 
 from api.routers import chat
+from rag.logging_config import setup_logging
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+setup_logging()
 
 app = FastAPI(
     title="Teacher Rights RAG API",
