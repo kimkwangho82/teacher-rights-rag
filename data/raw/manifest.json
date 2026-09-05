@@ -1,0 +1,12 @@
+{
+  "_comment": "data/raw/ 에 넣은 문서의 메타데이터. file 은 data/raw 기준 상대 경로. Citation 과 README Corpus 표에 사용된다.",
+  "documents": [
+    {
+      "file": "2025+교육활동+보호+매뉴얼(배포용).pdf",
+      "title": "2025 교육활동 보호 매뉴얼",
+      "publisher": "교육부",
+      "year": 2025,
+      "url": ""
+    }
+  ]
+}
