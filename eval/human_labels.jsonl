@@ -1,0 +1,32 @@
+{"id": "q001", "faithful": true,  "correct": true,  "notes": "p7 법 조문 정의 그대로. 보호자 범위 예시는 없지만 핵심 답 충족"}
+{"id": "q002", "faithful": true,  "correct": true,  "notes": ""}
+{"id": "q003", "faithful": true,  "correct": true,  "notes": "교원 위원 1/2 제한은 누락(선택 기준)"}
+{"id": "q004", "faithful": null,  "correct": false, "notes": "과잉 거부. p23 미검색"}
+{"id": "q005", "faithful": true,  "correct": true,  "notes": ""}
+{"id": "q006", "faithful": true,  "correct": false, "notes": "7개 조치 중 4개만 열거(청크 경계에서 목록이 끊김)"}
+{"id": "q007", "faithful": true,  "correct": true,  "notes": ""}
+{"id": "q008", "faithful": true,  "correct": true,  "notes": ""}
+{"id": "q009", "faithful": null,  "correct": false, "notes": "과잉 거부. p35/40 미검색"}
+{"id": "q010", "faithful": true,  "correct": true,  "notes": "Judge 가 '확인서를 즉시 작성' 을 미지지로 판정했으나 문맥의 '즉시 분리 의사 확인서(서식2)' 재구성으로 봄 → Judge 과엄격 사례"}
+{"id": "q011", "faithful": true,  "correct": true,  "notes": ""}
+{"id": "q012", "faithful": true,  "correct": true,  "notes": ""}
+{"id": "q013", "faithful": null,  "correct": false, "notes": "과잉 거부. p59 미검색"}
+{"id": "q014", "faithful": true,  "correct": true,  "notes": ""}
+{"id": "q015", "faithful": false, "correct": false, "notes": "'광역적 차원의 정책 수립' 등 문맥에 없는 추론 포함. 지역위 심의사항(p25) 미검색"}
+{"id": "q016", "faithful": null,  "correct": false, "notes": "과잉 거부"}
+{"id": "q017", "faithful": true,  "correct": true,  "notes": "Judge 가 '두 기간 중 하나라도 경과하면 제기 불가' 를 미지지로 봤으나 p63 문장에서 직접 추론 가능 → Judge 과엄격 사례"}
+{"id": "q018", "faithful": true,  "correct": false, "notes": "공무상 요양 승인 연 180일 누락 (p73 이 4위로 검색됐지만 답변에 반영 안 됨)"}
+{"id": "q019", "faithful": true,  "correct": true,  "notes": "7개 유의사항 전부 정확"}
+{"id": "q020", "faithful": true,  "correct": true,  "notes": ""}
+{"id": "q021", "faithful": true,  "correct": true,  "notes": ""}
+{"id": "q022", "faithful": true,  "correct": true,  "notes": ""}
+{"id": "q023", "faithful": true,  "correct": true,  "notes": "p10 FAQ 는 못 찾았지만 사례 장(p96,103) 근거로 '침해로 다뤄질 수 있다' 결론 도출. 결론은 맞음"}
+{"id": "q024", "faithful": null,  "correct": false, "notes": "과잉 거부. p102 미검색"}
+{"id": "q025", "faithful": true,  "correct": true,  "notes": ""}
+{"id": "q026", "faithful": true,  "correct": true,  "notes": "부록 고시 별표(p200) 근거"}
+{"id": "q027", "faithful": null,  "correct": true,  "notes": "거부 정답"}
+{"id": "q028", "faithful": null,  "correct": true,  "notes": "거부 정답"}
+{"id": "q029", "faithful": null,  "correct": true,  "notes": "거부 정답 (p56 자체해결제 언급 청크가 검색되지만 답은 없음)"}
+{"id": "q030", "faithful": null,  "correct": true,  "notes": "거부 정답"}
+{"id": "q031", "faithful": null,  "correct": true,  "notes": "거부 정답"}
+{"id": "q032", "faithful": false, "correct": false, "notes": "Hallucination: '급여 정상 지급' 은 문서에 없음. 특별휴가 문맥(p73,74)이 높은 점수로 검색되어 점수 기반 abstain 을 통과하고 모델도 거부하지 않음"}
