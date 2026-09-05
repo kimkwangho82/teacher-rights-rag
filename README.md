@@ -16,7 +16,14 @@
   - [API 스키마](#api-스키마)
 - [Design Decision & Trade-off](#design-decision--trade-off)
 - [한계 및 알려진 이슈](#한계-및-알려진-이슈)
-- [Eval Harness](#eval-harness) (작성 예정)
+- [Eval Harness](#eval-harness)
+  - [Gold Set](#gold-set)
+  - [지표 정의](#지표-정의)
+  - [LLM-as-a-Judge 신뢰성](#llm-as-a-judge-신뢰성)
+  - [실행과 재현성](#실행과-재현성)
+  - [Baseline 결과](#baseline-결과)
+  - [지표의 한계와 맹점](#지표의-한계와-맹점)
+  - [CI 연동 설계](#ci-연동-설계)
 - [개선 실험](#개선-실험) (작성 예정)
 
 ---
@@ -30,7 +37,7 @@ cp .env.example .env             # 2. OPENAI_API_KEY 입력
 uv run python -m scripts.ingest --reset   # 3. 문서 Ingest → data/vectorstore/
 uv run uvicorn api.main:app --reload      # 4. API 서버 (http://localhost:8000/docs)
 uv run pytest                    # 5. 단위 테스트 (외부 API 호출 없음)
-# uv run python -m eval.run      # 6. Eval (작성 예정)
+uv run python -m eval.run --name baseline   # 6. Eval Harness 실행 → eval/reports/baseline_<시각>/report.md
 ```
 
 같은 작업을 `make` 로도 실행할 수 있다 (`make help` 로 목록 확인):
@@ -41,6 +48,8 @@ make ingest-reset             # 인덱싱
 make dev                      # 서버 (자동 리로드)
 make test                     # 테스트
 make ask Q="교권보호위원회 구성은?"   # 질의 전송
+make eval                     # Eval Harness (make eval NAME=exp1)
+make eval-smoke               # 유형별 1개씩 7개만
 ```
 
 질의 예시:
@@ -186,7 +195,147 @@ curl -s -X POST localhost:8000/chat -H 'Content-Type: application/json' \
 - **단일 프로세스 Chroma**: 동시 요청·다중 워커 환경에서는 별도 벡터 DB 서버가 필요하다.
 
 ## Eval Harness
-_작성 예정_
+
+RAG 응답 품질을 **검색 단계**와 **생성 단계**로 나누어 측정한다. 점수가 낮을 때 "근거를 못 찾은 것"인지 "찾았는데 잘못 답한 것"인지 분리하기 위한 구조다. 지표 정의는 RAGAS 논문(Es et al., 2023)을 따르되 라이브러리를 쓰지 않고 `eval/metrics/` 에 직접 구현했다. 프레임워크를 블랙박스로 쓰지 않기 위해서이고, 프롬프트를 파일로 고정해 버전을 추적하기 위해서다.
+
+```
+eval/
+├── gold_set.jsonl        # Gold Set 32개
+├── human_labels.jsonl    # Judge 검증용 수동 라벨 32개
+├── prompts/*.txt         # Judge 프롬프트 5개 (해시로 버전 기록)
+├── metrics/              # retrieval(규칙) · abstain(규칙) · ragas(Judge) · correctness(Judge)
+├── judge.py              # Judge 클라이언트: temperature 0, seed, JSON 파싱, 디스크 캐시
+├── runner.py / report.py # 실행 · 집계 · report.json/md
+├── run.py                # 단일 명령 진입점
+├── compare.py            # Before/After 비교
+└── reports/              # 실행 결과 (baseline 포함)
+```
+
+### Gold Set
+
+`eval/gold_set.jsonl`, 32문항. 각 문항은 질의, 답 가능 여부, **근거 페이지**, **수용 기준 체크리스트**(필수/선택)를 가진다.
+
+| 유형 | n | 예시 |
+|---|---|---|
+| factual | 8 | 지역교권보호위원회는 몇 명으로 구성되고 임기는? |
+| procedural | 6 | 분리조치는 어떤 절차로 진행되고 기간은 어느 정도가 권장되나? |
+| multi_evidence | 4 | 행정심판과 행정소송의 청구 기간은 각각 어떻게 다른가? (2개 절 교차) |
+| summary | 4 | 교원보호공제사업 표준약관의 보장 항목과 한도를 정리해 주세요 |
+| reasoning | 4 | 과자를 먹다 지도받고 멈췼지만 다시 먹은 학생, 침해행위인가? (사례 → 유형 판단) |
+| unanswerable_out | 3 | 형사 고소 시 승소 확률은? (문서 범위 밖) |
+| unanswerable_in | 3 | 회의록은 몇 년간 보존해야 하나? (주제는 범위 안, 세부 정보는 문서에 없음) |
+
+- **구축 방법**: `data/processed/chunks.jsonl` 로 매뉴얼 원문을 장별로 읽으며 AI 보조로 초안을 작성하고, 근거 페이지를 원문과 대조해 확정했다. 검색 결과 검토 과정에서 같은 근거가 부록 법령·고시에도 실려 있는 경우(예: 침해학생 조치 7종은 p25·36·53·180)를 발견해 근거 페이지에 추가했다. 답 없는 질의 6개는 `chunks.jsonl` 전문 검색으로 부재를 확인했다.
+- **근거 키를 chunk_id 가 아닌 page 로 둔 이유**: 청킹 파라미터를 바꾸는 실험에서도 gold 를 다시 매핑하지 않고 비교하기 위해서다. 대신 같은 페이지의 무관한 청크도 정답으로 처리되는 관대함이 있다.
+- **편향·한계**: 단일 문서(교육부 매뉴얼 1종) 기반이며 작성자 1인이 검수했다. 질의 표현이 문서 용어와 가까워 실제 교사의 구어체 질의보다 검색이 쉬울 수 있다. 절차·위원회 장(Ⅱ·Ⅲ)에 문항이 집중되고 서식·부록은 거의 다루지 않는다. `unanswerable_in` 은 "문서에 없다" 는 판단을 문서 전문 검색에 의존하므로, 표현이 다른 형태로 존재할 가능성을 완전히 배제하지 못한다.
+
+### 지표 정의
+
+| 단계 | 지표 | 정의 | 판정 | 선정 이유 |
+|---|---|---|---|---|
+| 검색 | **Recall@K** | gold 근거 페이지 중 상위 K 청크의 페이지에 포함된 비율 | 규칙 | 결정적·재현 가능. 다중 근거 질의에서 Hit Rate 와 갈라진다. |
+| 검색 | **MRR** | gold 페이지에 속하는 첫 청크의 1/rank (없으면 0) | 규칙 | 순위에 민감해 리랭킹·하이브리드 실험 효과를 Recall 보다 예민하게 잡는다. |
+| 검색 | Context Relevance | 문맥에서 질문에 필요한 문장만 추출 → 추출 문장 수 / 전체 문장 수 (RAGAS 식 2) | Judge | gold 없이도 "불필요한 문맥이 얼마나 섞였나" 를 본다. K·청크 크기 실험의 부작용 감시용. |
+| 생성 | **Faithfulness** | 답변을 원자적 주장으로 분해 → 각 주장이 *실제 프롬프트에 들어간 문맥*에서 추론 가능한지 → 지지 주장 수 / 전체 (RAGAS F = \|V\|/\|S\|) | Judge ×2 | Hallucination 직접 측정. 주장 단위라 전체 점수 방식보다 안정적이고 어떤 주장이 지어낸 것인지 로그가 남는다. |
+| 생성 | **Correctness** | 수용 기준 체크리스트 항목별 pass/fail → 통과/전체. 필수 항목 실패 시 0 | Judge | 요약·추론형 질의에 참조 답변 유사도보다 적합. Faithfulness 와 교차하면 "충실하지만 틀림 = 검색 실패", "맞지만 불충실 = 사전지식 답변" 을 구분할 수 있다. |
+| 생성 | **Abstain Accuracy** | 답 없는 질의의 거부율과 답 있는 질의의 응답률을 **따로** 보고 + 혼동행렬 | 규칙 | "전부 거부" 시스템이 Faithfulness 만점을 받는 것을 견제한다. 두 오류를 분리해야 임계값 실험의 트레이드오프가 보인다. |
+| 생성 | Answer Relevance (보조) | 답변에서 질문 3개를 역생성 → 원 질문과 임베딩 cosine 평균 (RAGAS 식 1) | Judge + 임베딩 | 불완전하거나 장황한 답변 감지. 보조 지표. |
+
+Abstain 응답은 주장이 0개이므로 Faithfulness·Answer Relevance 계산에서 제외하고 Abstain 지표로만 집계한다. 과잉 거부 케이스는 검색 문맥의 Context Relevance 만 측정해 검색 문제인지 생성 문제인지 분리한다.
+
+### LLM-as-a-Judge 신뢰성
+
+| 확보 방법 | 구현 |
+|---|---|
+| 결정성 | `temperature=0`, `seed` 고정(기본 42), JSON 구조화 출력. 파싱 실패 시 1회 재시도 후 `judge_error` 로 기록 |
+| 프롬프트 고정 | `eval/prompts/*.txt` 파일로 분리하고 논문처럼 demonstration 1개 포함. 파일 해시를 run_config 에 기록해 프롬프트 변경을 추적 |
+| 생성 모델과 분리 | `JUDGE_MODEL`(기본 gpt-4.1)을 생성 모델과 별도로 두어 self-preference 회피 |
+| 일관성 측정 | `--repeat 3`: 같은 입력을 3회 채점해 항목별 표준편차와 이진 판정 일치율 보고 |
+| Human alignment | `eval/human_labels.jsonl` 에 32문항 전부 수동 라벨(faithful / correct). Judge 이진 판정과의 일치율과 Cohen's κ 를 리포트에 표시 |
+
+Baseline 측정값 (`eval/reports/baseline_20260905-150624`):
+
+| 지표 | 3회 반복 표준편차 평균 | 이진 판정 일치율 | 수동 라벨 일치율 (n) | Cohen's κ |
+|---|---|---|---|---|
+| faithfulness (임계값 0.8) | 0.011 | 95.5% | 90.9% (22) | 0.62 |
+| correctness (임계값 0.5) | 0.029 | 93.8% | 96.9% (32) | 0.92 |
+| context_relevance | 0.008 | 100% | – | – |
+
+Faithfulness 불일치 2건은 모두 **Judge 가 사람보다 엄격**한 경우였다. 문맥의 "즉시 분리 의사 확인서(서식2)" 를 답변이 "확인서를 즉시 작성" 으로 재구성한 것(q010), "1년을 경과하면 제기할 수 없다" 에서 "두 기간 중 하나라도 경과하면 불가" 를 추론한 것(q017)을 미지지로 판정했다. 요약·추론형 답변에서 재구성 표현을 보수적으로 보는 RAGAS 방식의 알려진 경향과 일치한다.
+
+### 실행과 재현성
+
+```bash
+make eval                                     # = uv run python -m eval.run --name baseline
+uv run python -m eval.run --name x --subset 7 # 유형별 1개 (스모크)
+uv run python -m eval.run --name x --repeat 3 # Judge 일관성
+uv run python -m eval.run --name x --no-judge # 규칙 지표만 (Judge 비용 0, 생성 호출은 발생)
+make eval-compare A=eval/reports/baseline_x B=eval/reports/exp_y   # Before/After 표
+```
+
+- 단일 명령으로 Gold Set 전체를 평가하고 `report.md`(요약) · `report.json`(집계) · `items.jsonl`(문항별 상세: 검색 청크·점수·주장별 판정·기준별 판정)을 생성한다.
+- **run_config 기록**: git SHA, 실행 시각, 생성/임베딩/Judge 모델, seed, temperature, 청킹·검색 설정, 프롬프트 해시, Gold Set 해시, 인덱스 청크 수, 주요 패키지 버전.
+- **Judge 캐시**: `sha256(모델, seed, 프롬프트 해시, 입력, 반복 인덱스)` 키로 `eval/cache/` 에 저장. 같은 답변을 다시 채점하지 않으므로 재실행 비용이 크게 줄고(위 baseline 재실행 시 125회 중 97회 캐시 적중), 캐시를 지우고 재실행해도 seed 로 동일 결과를 기대한다.
+- 생성 단계에도 seed 를 전달하지만 OpenAI 의 seed 는 best-effort 라 재실행 시 답변이 소폭 달라질 수 있다. 실제로 재실행 간 faithfulness 가 0.93 → 0.90 으로 변동했다. 그래서 실험 비교는 같은 Gold Set·같은 설정에서 **여러 번 실행한 평균**을 권장하며, 리포트에 항목별 점수를 모두 남겨 어느 문항이 흔들렸는지 추적할 수 있게 했다.
+
+### Baseline 결과
+
+설정: gpt-4.1 / text-embedding-3-small / chunk 1000·200 / top_k 4 / threshold 0.3 / Judge gpt-4.1 (`eval/reports/baseline_20260905-150624`)
+
+| 단계 | 지표 | 값 | n |
+|---|---|---|---|
+| 검색 | Recall@4 | 0.513 | 26 |
+| 검색 | MRR | 0.673 | 26 |
+| 검색 | Context Relevance | 0.110 | 27 |
+| 생성 | Faithfulness | 0.898 | 22 |
+| 생성 | Correctness | 0.641 | 32 |
+| 생성 | Answer Relevance | 0.742 | 22 |
+| Abstain | 답 있는 질의 응답률 | 80.8% (21/26) | |
+| Abstain | 답 없는 질의 거부율 | 83.3% (5/6) | |
+
+| 유형 | n | Recall@4 | MRR | Faith | Correct | 거부율 |
+|---|---|---|---|---|---|---|
+| factual | 8 | 0.56 | 0.69 | 1.00 | 0.52 | 12.5% |
+| procedural | 6 | 0.35 | 0.58 | 0.88 | 0.78 | 33.3% |
+| multi_evidence | 4 | 0.50 | 0.75 | 0.83 | 0.17 | 25.0% |
+| summary | 4 | 0.81 | 1.00 | 1.00 | 1.00 | 0.0% |
+| reasoning | 4 | 0.38 | 0.38 | 0.92 | 0.50 | 25.0% |
+| unanswerable_in | 3 | – | – | 0.00 | 0.67 | 66.7% |
+| unanswerable_out | 3 | – | – | – | 1.00 | 100% |
+
+**관찰**
+- **과잉 거부 5건(q004, q009, q013, q016, q024)은 모두 Recall@4 = 0** 이다. 즉 생성 모델이 소극적인 것이 아니라 근거 페이지가 상위 4개에 들지 않아 프롬프트 규칙대로 거부한 것이다. 병목은 검색 단계다. 예: "시·도교권보호위원회 위원 정수" 질의에 p24·26·28(지역교권보호위원회)은 검색되고 p23(시·도)은 빠졌다. 용어가 비슷한 두 위원회를 dense 임베딩이 구분하지 못했다.
+- **Hallucination 1건(q032)**: "특별휴가 기간 급여" 는 문서에 없는데, 특별휴가 관련 청크가 높은 점수(0.72)로 검색돼 점수 기반 abstain 을 통과했고 모델도 "정상 지급된다" 고 답했다. 프롬프트 기반 abstain 이 실패한 유일한 사례로, `unanswerable_in` 유형이 왜 필요한지 보여준다.
+- **multi_evidence 의 Correctness 0.17**: 두 절을 교차해야 하는 질의에서 한쪽 근거만 검색되면 모델이 나머지를 "자료에 없다" 고 답한다(q015). 요약형(summary)은 근거가 한 페이지에 모여 있어 1.00 을 기록했다.
+- **Faithfulness 는 높고(0.90) Correctness 는 낮다(0.64)**: 지어내지는 않지만 근거를 덜 가져오거나 일부만 답하는 패턴. 개선 실험은 생성보다 검색(Recall) 쪽을 겨냥해야 한다는 근거가 된다.
+- Context Relevance 0.11 은 4개 청크(약 2,800자) 중 실제 필요한 문장이 10% 안팎이라는 뜻이다. 절대값보다 K·청크 크기 실험에서의 변화량으로 해석한다.
+
+### 지표의 한계와 맹점
+
+| 지표 | 맹점 |
+|---|---|
+| Recall@K / MRR | 페이지 단위라 같은 페이지의 무관 청크도 정답 처리. gold 근거가 여러 곳에 중복될 때 어느 하나만 찾아도 만점. MRR 은 첫 정답 순위만 반영해 다중 근거 질의에 불리. |
+| Context Relevance | 문장 분할 규칙(종결부호·글머리표 기준)에 의존. 판정자가 추출한 문장 수와 규칙 분할 수의 단위가 완전히 일치하지 않아 근사값이다. 표·서식 페이지에서 낮게 나온다. |
+| Faithfulness | 문맥을 그대로 복사하면 만점. 재구성 표현을 미지지로 판정하는 보수성(위 alignment 불일치 2건). 주장 분해 단계가 문장을 얼마나 잘게 나누느냐에 따라 분모가 달라진다. 숫자·주체가 미세하게 다른 오류를 supported 로 넘길 수 있다. |
+| Correctness | 수용 기준이 작성자 1인의 판단. 기준에 없는 올바른 정보를 더해도 점수가 오르지 않고, 기준의 표현과 다르게 말하면 fail 될 수 있다. 필수 항목 실패 시 0 으로 만드는 규칙이 부분 정답을 과소평가한다. |
+| Abstain | `status` 필드만 보므로 "답변은 했지만 본문에서 '자료에 없다' 고 얼버무린" 경우(q015)를 거부로 잡지 못한다. 거부 자체가 정답인 6문항은 Faithfulness 계산에서 빠져 생성 지표의 n 이 줄어든다. |
+| Answer Relevance | 역생성 질문과 임베딩 모델에 의존. 답변이 틀려도 질문과 주제가 같으면 높게 나온다(사실성 미반영). |
+| Judge 전반 | 사람 라벨도 작성자 1인이라 alignment 수치 자체에 편향이 있다. 같은 모델(gpt-4.1)이 생성과 판정을 모두 맡으므로 self-preference 가 완전히 제거되지 않는다(JUDGE_MODEL 로 교체 가능). |
+
+### CI 연동 설계
+
+Eval 파이프라인을 회귀 방지 장치로 쓰려면 비용과 비결정성을 통제해야 한다. 제안하는 구성:
+
+| 단계 | 트리거 | 내용 | 비용 통제 |
+|---|---|---|---|
+| Unit | 모든 PR | `pytest` (지표 함수, 캐시 키, 리포트 생성 — LLM 호출 없음) + `ruff` | 0 |
+| Smoke | 모든 PR | `eval.run --subset 7 --no-judge` → Recall@K·Abstain 만 검사. 임계값(예: Recall@4 ≥ baseline − 0.1, 답 없는 질의 거부율 = 100%) 미달 시 실패 | 생성 7회 + 임베딩 |
+| Full | `main` 머지 후 야간 1회, 또는 `eval/`·`rag/` 변경 PR 에 수동 라벨 | `eval.run --repeat 2` 전체 → `compare.py` 로 직전 baseline 과 diff 를 PR 코멘트에 게시 | Judge 캐시를 GitHub Actions cache 에 보존해 변경 없는 문항은 재채점하지 않음 |
+| Gate | Full 결과 | Correctness·Faithfulness 가 baseline 대비 −0.05 이상 하락하거나 hallucination(답 없는 질의 답변) 건수가 증가하면 실패. 단일 실행 변동(±0.03)보다 큰 폭만 게이트로 사용 | |
+
+- 프롬프트·Gold Set 해시가 바뀐 PR 은 baseline 갱신 PR 로 취급해 게이트를 건너뛰고 새 baseline 을 커밋한다.
+- API 키는 저장소 secret 으로만 주입하고 fork PR 에서는 Smoke/Full 을 실행하지 않는다.
+- `.github/workflows/eval.yml` 에 Unit 단계와 수동 트리거 Smoke 를 구현해 두었다. Full 단계는 크레딧 사정에 따라 스케줄을 켜는 것을 전제로 설계만 기록한다.
 
 ## 개선 실험
 _작성 예정_

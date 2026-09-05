@@ -1,0 +1,45 @@
+name: eval
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      subset:
+        description: "스모크 평가 문항 수 (유형별 균등 샘플)"
+        default: "7"
+
+jobs:
+  unit:
+    # LLM 호출 없는 단위 테스트 + 린트. 모든 PR 에서 실행.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run --with ruff ruff check .
+      - run: uv run pytest -q
+
+  smoke:
+    # 수동 트리거 전용: 인덱스 구축 → 규칙 지표(Recall@K, Abstain)만 평가. Judge 미사용.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    needs: unit
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - uses: actions/cache@v4
+        with:
+          path: eval/cache
+          key: judge-cache-${{ hashFiles('eval/prompts/*.txt', 'eval/gold_set.jsonl') }}
+      - run: uv run python -m scripts.ingest --reset
+      - run: uv run python -m eval.run --name ci-smoke --subset ${{ inputs.subset }} --no-judge --out eval/reports/ci-smoke
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: eval/reports/ci-smoke
