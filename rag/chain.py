@@ -77,6 +77,7 @@ def get_chat_model() -> ChatOpenAI:
     return ChatOpenAI(
         model=settings.chat_model,
         temperature=settings.temperature,
+        seed=settings.seed,
         api_key=settings.openai_api_key or None,
         base_url=settings.openai_base_url,
     )

@@ -18,6 +18,15 @@ class Settings(BaseSettings):
     chat_model: str = "gpt-4.1-mini"
     embedding_model: str = "text-embedding-3-small"
     temperature: float = 0.0
+    # 생성·심판 모두 같은 seed 를 사용해 재현성을 높인다 (OpenAI 는 best-effort)
+    seed: int = 42
+
+    # --- Eval (LLM-as-a-Judge) ---
+    # 생성 모델과 분리된 심판 모델 (self-preference 회피)
+    judge_model: str = "gpt-4.1"
+    eval_dir: Path = BASE_DIR / "eval"
+    reports_dir: Path = BASE_DIR / "eval" / "reports"
+    judge_cache_dir: Path = BASE_DIR / "eval" / "cache"
 
     # --- 경로 ---
     raw_dir: Path = DATA_DIR / "raw"
