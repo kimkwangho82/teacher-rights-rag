@@ -7,7 +7,7 @@ HOST    ?= 0.0.0.0
 Q       ?= 교육활동 침해 사안 발생 시 학교장의 조치 절차는?
 
 .DEFAULT_GOAL := help
-.PHONY: help install env ingest ingest-reset ingest-dry serve dev test lint format ask health clean clean-index
+.PHONY: help install env ingest ingest-reset ingest-dry serve dev test lint format ask health eval eval-smoke eval-nojudge eval-compare clean clean-index
 
 help: ## 타겟 목록 출력
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -52,6 +52,18 @@ ask: ## 질의 전송 (make ask Q="질문")
 	if [ $$rc -eq 7 ]; then echo "서버에 연결할 수 없습니다 (localhost:$(PORT)). 먼저 'make dev' 를 실행하세요."; exit 1; fi; \
 	if [ $$rc -ne 0 ]; then echo "요청 실패 (HTTP 오류):"; printf '%s\n' "$$out"; exit 1; fi; \
 	printf '%s\n' "$$out" | $(UV) run python -m json.tool --no-ensure-ascii
+
+eval: ## Gold Set 전체 평가 + 리포트 (make eval NAME=baseline)
+	$(UV) run python -m eval.run --name $(or $(NAME),baseline)
+
+eval-smoke: ## 유형별 1개씩 7개만 평가 (빠른 확인)
+	$(UV) run python -m eval.run --name smoke --subset 7
+
+eval-nojudge: ## 규칙 기반 지표만 (Judge 호출 없음)
+	$(UV) run python -m eval.run --name $(or $(NAME),nojudge) --no-judge
+
+eval-compare: ## 두 리포트 비교 (make eval-compare A=eval/reports/x B=eval/reports/y)
+	$(UV) run python -m eval.compare $(A) $(B)
 
 clean: ## 캐시/임시 파일 삭제
 	find . -type d -name __pycache__ -not -path './.venv/*' -exec rm -rf {} +
