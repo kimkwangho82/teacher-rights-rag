@@ -40,5 +40,7 @@ def chat(req: ChatRequest) -> ChatResponse:
         result = answer_question(req.question, top_k=req.top_k)
     except Exception as exc:  # LLM / 벡터스토어 오류
         logger.exception("chat failed")
-        raise HTTPException(status_code=502, detail=f"upstream error: {type(exc).__name__}") from exc
+        raise HTTPException(
+            status_code=502, detail=f"upstream error: {type(exc).__name__}"
+        ) from exc
     return to_response(result, int((time.perf_counter() - start) * 1000))

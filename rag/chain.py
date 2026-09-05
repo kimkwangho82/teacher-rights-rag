@@ -6,6 +6,7 @@ Hallucination 방지 2단계:
   2) 프롬프트 기반: 문맥이 검색됐더라도 답을 구성할 수 없으면 모델이 INSUFFICIENT_CONTEXT 만 출력하도록 지시.
      - 주제는 관련 있으나 문서에 답이 없는 질의를 거른다.
 """
+
 import re
 from dataclasses import dataclass, field
 
@@ -16,7 +17,9 @@ from rag.config import settings
 from rag.retriever import retrieve
 
 INSUFFICIENT_TOKEN = "INSUFFICIENT_CONTEXT"
-INSUFFICIENT_MESSAGE = "제공된 문서에서 질문에 대한 근거를 찾지 못해 답변할 수 없습니다."
+INSUFFICIENT_MESSAGE = (
+    "제공된 문서에서 질문에 대한 근거를 찾지 못해 답변할 수 없습니다."
+)
 
 SYSTEM_PROMPT = f"""당신은 교권(교사의 교육활동 보호) 관련 질문에 답하는 도우미입니다.
 반드시 아래 [참고 자료]만 근거로 답하세요. 사전 지식이나 추측으로 내용을 보충하지 마세요.
@@ -85,11 +88,16 @@ def answer_question(question: str, top_k: int | None = None) -> RagAnswer:
 
     # 1) 점수 기반 abstain
     if not items or items[0].score < settings.similarity_threshold:
-        return RagAnswer(answer=INSUFFICIENT_MESSAGE, status="insufficient", retrieved=items)
+        return RagAnswer(
+            answer=INSUFFICIENT_MESSAGE, status="insufficient", retrieved=items
+        )
 
     response = get_chat_model().invoke(
         [
-            {"role": "system", "content": SYSTEM_PROMPT.format(context=format_context(items))},
+            {
+                "role": "system",
+                "content": SYSTEM_PROMPT.format(context=format_context(items)),
+            },
             {"role": "user", "content": question},
         ]
     )
@@ -97,7 +105,12 @@ def answer_question(question: str, top_k: int | None = None) -> RagAnswer:
 
     # 2) 프롬프트 기반 abstain
     if INSUFFICIENT_TOKEN in text and len(text) <= len(INSUFFICIENT_TOKEN) + 10:
-        return RagAnswer(answer=INSUFFICIENT_MESSAGE, status="insufficient", retrieved=items, llm_called=True)
+        return RagAnswer(
+            answer=INSUFFICIENT_MESSAGE,
+            status="insufficient",
+            retrieved=items,
+            llm_called=True,
+        )
 
     return RagAnswer(
         answer=text,

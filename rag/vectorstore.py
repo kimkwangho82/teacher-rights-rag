@@ -3,6 +3,7 @@
 - cosine 공간을 사용해 relevance score 를 0~1 로 해석할 수 있게 한다 (abstain 임계값에 사용).
 - 임베딩은 rag.embeddings.get_embeddings() 단일 소스 → 인덱싱/검색 모델 불일치 방지.
 """
+
 import shutil
 
 from langchain_chroma import Chroma

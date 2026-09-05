@@ -49,7 +49,9 @@ def test_answer_extracts_cited_indices_in_order(patch_chain):
     assert result.citations[0].doc.metadata["page"] == 46
     # 프롬프트에 번호 매긴 문맥이 들어갔는지
     system = fake.last_messages[0]["content"]
-    assert "[1] (테스트 매뉴얼, p.45)" in system and "[3] (테스트 매뉴얼, p.10)" in system
+    assert (
+        "[1] (테스트 매뉴얼, p.45)" in system and "[3] (테스트 매뉴얼, p.10)" in system
+    )
 
 
 def test_answer_without_markers_returns_all_retrieved(patch_chain):

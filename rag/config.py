@@ -1,4 +1,5 @@
 """환경 변수 기반 설정. 모든 민감 정보는 .env 에서 읽는다 (하드코딩 금지)."""
+
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict

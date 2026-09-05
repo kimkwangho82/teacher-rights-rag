@@ -1,4 +1,5 @@
 """임베딩 모델. 인덱싱과 검색에 반드시 같은 모델을 사용한다 (config 단일 소스)."""
+
 from functools import lru_cache
 
 from langchain_openai import OpenAIEmbeddings

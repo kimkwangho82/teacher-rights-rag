@@ -14,7 +14,13 @@ def test_chat_returns_citations(monkeypatch):
     monkeypatch.setattr(
         chat_router,
         "answer_question",
-        lambda q, top_k=None: RagAnswer(answer="즉시 보호한다 [1]", status="answered", citations=[r], retrieved=[r], llm_called=True),
+        lambda q, top_k=None: RagAnswer(
+            answer="즉시 보호한다 [1]",
+            status="answered",
+            citations=[r],
+            retrieved=[r],
+            llm_called=True,
+        ),
     )
     res = client.post("/chat", json={"question": "절차는?"})
     assert res.status_code == 200
@@ -35,7 +41,9 @@ def test_chat_returns_citations(monkeypatch):
 
 def test_chat_insufficient(monkeypatch):
     monkeypatch.setattr(
-        chat_router, "answer_question", lambda q, top_k=None: RagAnswer(answer="답변 불가", status="insufficient")
+        chat_router,
+        "answer_question",
+        lambda q, top_k=None: RagAnswer(answer="답변 불가", status="insufficient"),
     )
     body = client.post("/chat", json={"question": "날씨?"}).json()
     assert body["status"] == "insufficient" and body["citations"] == []

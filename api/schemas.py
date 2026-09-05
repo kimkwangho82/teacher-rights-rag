@@ -5,9 +5,17 @@ from pydantic import BaseModel, Field
 
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, description="사용자 질의")
-    top_k: int | None = Field(default=None, ge=1, le=20, description="검색할 청크 수 (기본: 설정값)")
+    top_k: int | None = Field(
+        default=None, ge=1, le=20, description="검색할 청크 수 (기본: 설정값)"
+    )
 
-    model_config = {"json_schema_extra": {"examples": [{"question": "교육활동 침해 사안 발생 시 학교장의 조치 절차는?"}]}}
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {"question": "교육활동 침해 사안 발생 시 학교장의 조치 절차는?"}
+            ]
+        }
+    }
 
 
 class Citation(BaseModel):

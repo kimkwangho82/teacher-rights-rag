@@ -7,6 +7,7 @@
 - min_chunk_chars 미만의 청크(쪽번호·머리글 조각)는 제거해 노이즈 검색을 막는다.
 - 각 청크에 chunk_id = "{doc_id}:p{page}:c{idx}" 를 부여해 Citation 의 안정적 키로 사용한다.
 """
+
 from collections import defaultdict
 
 from langchain_core.documents import Document
@@ -17,10 +18,14 @@ from rag.config import settings
 SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
 
 
-def get_splitter(chunk_size: int | None = None, chunk_overlap: int | None = None) -> RecursiveCharacterTextSplitter:
+def get_splitter(
+    chunk_size: int | None = None, chunk_overlap: int | None = None
+) -> RecursiveCharacterTextSplitter:
     return RecursiveCharacterTextSplitter(
         chunk_size=chunk_size or settings.chunk_size,
-        chunk_overlap=settings.chunk_overlap if chunk_overlap is None else chunk_overlap,
+        chunk_overlap=settings.chunk_overlap
+        if chunk_overlap is None
+        else chunk_overlap,
         separators=SEPARATORS,
     )
 
@@ -31,7 +36,11 @@ def split_documents(
     chunk_overlap: int | None = None,
 ) -> list[Document]:
     splitter = get_splitter(chunk_size, chunk_overlap)
-    chunks = [c for c in splitter.split_documents(docs) if len(c.page_content) >= settings.min_chunk_chars]
+    chunks = [
+        c
+        for c in splitter.split_documents(docs)
+        if len(c.page_content) >= settings.min_chunk_chars
+    ]
 
     counters: dict[tuple[str, int], int] = defaultdict(int)
     for c in chunks:

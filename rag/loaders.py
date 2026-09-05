@@ -7,6 +7,7 @@
   source   : data/raw 기준 상대 경로
   page     : 1-based 페이지 번호 (TXT/MD 는 1)
 """
+
 import json
 import re
 from pathlib import Path
@@ -55,7 +56,11 @@ def _load_file(path: Path) -> list[Document]:
             for i, page in enumerate(reader.pages, start=1)
         ]
     if suffix in {".txt", ".md"}:
-        return [Document(page_content=path.read_text(encoding="utf-8"), metadata={"page": 1})]
+        return [
+            Document(
+                page_content=path.read_text(encoding="utf-8"), metadata={"page": 1}
+            )
+        ]
     return []
 
 
