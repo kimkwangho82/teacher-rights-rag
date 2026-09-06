@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     # OpenAI 호환 엔드포인트로 전환할 때 사용 (OpenAI 호환 프록시/타 제공자)
     openai_base_url: str | None = None
-    chat_model: str = "gpt-4.1-mini"
+    chat_model: str = "gpt-4.1"  # baseline·개선 실험 리포트는 모두 이 모델로 실행
     embedding_model: str = "text-embedding-3-small"
     temperature: float = 0.0
     # 생성·심판 모두 같은 seed 를 사용해 재현성을 높인다 (OpenAI 는 best-effort)
