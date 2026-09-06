@@ -9,9 +9,14 @@ from tests.conftest import FakeChatModel
 def patch_chain(monkeypatch, retrieved_docs):
     def _patch(reply: str, docs=retrieved_docs, threshold: float = 0.3):
         fake = FakeChatModel(reply)
-        monkeypatch.setattr(chain, "retrieve", lambda q, k=None: docs)
+        monkeypatch.setattr(
+            chain,
+            "retrieve_with_gate",
+            lambda q, k=None: (docs, docs[0][1] if docs else 0.0),
+        )
         monkeypatch.setattr(chain, "get_chat_model", lambda: fake)
         monkeypatch.setattr(chain.settings, "similarity_threshold", threshold)
+        monkeypatch.setattr(chain.settings, "prompt_mode", "baseline")
         return fake
 
     return _patch

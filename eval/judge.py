@@ -10,18 +10,17 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import re
 from pathlib import Path
 from string import Template
 
 from langchain_openai import ChatOpenAI
 
 from rag.config import settings
+from rag.jsonutil import JSONExtractError, extract_json
 
 logger = logging.getLogger(__name__)
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
-_JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 
 class JudgeError(RuntimeError):
@@ -40,16 +39,10 @@ def prompt_hashes() -> dict[str, str]:
 
 
 def parse_json(text: str) -> dict:
-    text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.DOTALL).strip()
     try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        m = _JSON_RE.search(text)
-        if not m:
-            raise JudgeError(f"no JSON object in judge output: {text[:200]!r}")
-        return json.loads(m.group(0))
+        return extract_json(text)
+    except JSONExtractError as e:
+        raise JudgeError(str(e)) from None
 
 
 class Judge:

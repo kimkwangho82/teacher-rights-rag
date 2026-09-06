@@ -7,6 +7,7 @@ Hallucination 방지 2단계:
      - 주제는 관련 있으나 문서에 답이 없는 질의를 거른다.
 """
 
+import logging
 import re
 from dataclasses import dataclass, field
 
@@ -14,7 +15,10 @@ from langchain_core.documents import Document
 from langchain_openai import ChatOpenAI
 
 from rag.config import settings
-from rag.retriever import retrieve
+from rag.evidence_prompt import SYSTEM_PROMPT_EVIDENCE_FIRST, parse_evidence_output
+from rag.retriever import retrieve_with_gate
+
+logger = logging.getLogger(__name__)
 
 INSUFFICIENT_TOKEN = "INSUFFICIENT_CONTEXT"
 INSUFFICIENT_MESSAGE = (
@@ -51,6 +55,8 @@ class RagAnswer:
     retrieved: list[Retrieved] = field(default_factory=list)
     model: str = settings.chat_model
     llm_called: bool = False
+    quotes: list[dict] = field(default_factory=list)  # evidence_first 모드의 원문 인용
+    gate_score: float = 0.0  # abstain 게이트에 쓴 dense 최고 점수
 
 
 def format_context(items: list[Retrieved]) -> str:
@@ -84,25 +90,38 @@ def get_chat_model() -> ChatOpenAI:
 
 
 def answer_question(question: str, top_k: int | None = None) -> RagAnswer:
-    results = retrieve(question, k=top_k)
+    results, gate_score = retrieve_with_gate(question, k=top_k)
     items = [Retrieved(index=i + 1, doc=d, score=s) for i, (d, s) in enumerate(results)]
 
-    # 1) 점수 기반 abstain
-    if not items or items[0].score < settings.similarity_threshold:
+    # 1) 점수 기반 abstain (dense 최고 점수 기준 — hybrid 에서도 동일한 게이트)
+    if not items or gate_score < settings.similarity_threshold:
         return RagAnswer(
-            answer=INSUFFICIENT_MESSAGE, status="insufficient", retrieved=items
+            answer=INSUFFICIENT_MESSAGE,
+            status="insufficient",
+            retrieved=items,
+            gate_score=gate_score,
         )
 
+    context = format_context(items)
+    if settings.prompt_mode == "evidence_first":
+        return _answer_evidence_first(question, items, context, gate_score)
+    return _answer_baseline(question, items, context, gate_score)
+
+
+def _invoke(system_prompt: str, question: str) -> str:
     response = get_chat_model().invoke(
         [
-            {
-                "role": "system",
-                "content": SYSTEM_PROMPT.format(context=format_context(items)),
-            },
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": question},
         ]
     )
-    text = (response.content or "").strip()
+    return (response.content or "").strip()
+
+
+def _answer_baseline(
+    question: str, items: list[Retrieved], context: str, gate_score: float
+) -> RagAnswer:
+    text = _invoke(SYSTEM_PROMPT.format(context=context), question)
 
     # 2) 프롬프트 기반 abstain
     if INSUFFICIENT_TOKEN in text and len(text) <= len(INSUFFICIENT_TOKEN) + 10:
@@ -111,6 +130,7 @@ def answer_question(question: str, top_k: int | None = None) -> RagAnswer:
             status="insufficient",
             retrieved=items,
             llm_called=True,
+            gate_score=gate_score,
         )
 
     return RagAnswer(
@@ -119,4 +139,53 @@ def answer_question(question: str, top_k: int | None = None) -> RagAnswer:
         citations=extract_citations(text, items),
         retrieved=items,
         llm_called=True,
+        gate_score=gate_score,
+    )
+
+
+def _answer_evidence_first(
+    question: str, items: list[Retrieved], context: str, gate_score: float
+) -> RagAnswer:
+    """개선 실험 2: 원문 인용을 먼저 추출하고 인용에 근거해서만 답한다."""
+    text = _invoke(SYSTEM_PROMPT_EVIDENCE_FIRST.format(context=context), question)
+    out = parse_evidence_output(text)
+
+    if not out.parsed:
+        logger.warning("evidence_first: JSON 파싱 실패 → 원문 텍스트로 폴백")
+        return RagAnswer(
+            answer=out.answer,
+            status="answered",
+            citations=extract_citations(out.answer, items),
+            retrieved=items,
+            llm_called=True,
+            gate_score=gate_score,
+        )
+
+    # 2) 인용이 없거나 모델이 insufficient 로 표시 → abstain
+    if out.insufficient:
+        return RagAnswer(
+            answer=INSUFFICIENT_MESSAGE,
+            status="insufficient",
+            retrieved=items,
+            llm_called=True,
+            quotes=out.quotes,
+            gate_score=gate_score,
+        )
+
+    # 답변에 [n] 이 없으면 인용 출처를 citation 으로 사용
+    citations = extract_citations(out.answer, items)
+    if not _CITE_RE.search(out.answer):
+        by_index = {r.index: r for r in items}
+        sources = [q["source"] for q in out.quotes if q["source"] in by_index]
+        if sources:
+            citations = [by_index[i] for i in dict.fromkeys(sources)]
+
+    return RagAnswer(
+        answer=out.answer,
+        status="answered",
+        citations=citations,
+        retrieved=items,
+        llm_called=True,
+        quotes=out.quotes,
+        gate_score=gate_score,
     )
