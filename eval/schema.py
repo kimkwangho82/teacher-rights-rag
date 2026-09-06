@@ -79,8 +79,11 @@ class ItemResult(BaseModel):
     llm_called: bool
     retrieved: list[RetrievedChunk]
     cited_indices: list[int]
+    quotes: list[dict] = Field(default_factory=list)
+    gate_score: float | None = None
     evidence_pages: list[int]
     recall_at_k: float | None = None
+    recall_at_3: float | None = None  # K 가 다른 설정끼리 비교용 고정 K
     mrr: float | None = None
     judge: JudgeScores = Field(default_factory=JudgeScores)
     judge_repeats: list[JudgeScores] = Field(default_factory=list)
@@ -100,6 +103,9 @@ class RunConfig(BaseModel):
     min_chunk_chars: int
     top_k: int
     similarity_threshold: float
+    retrieval_mode: str = "dense"
+    bm25_tokenizer: str = "bigram"
+    prompt_mode: str = "baseline"
     prompt_hashes: dict[str, str]
     gold_set_hash: str
     gold_set_size: int

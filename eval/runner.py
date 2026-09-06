@@ -16,7 +16,14 @@ from eval.judge import Judge, prompt_hashes
 from eval.metrics import correctness as corr
 from eval.metrics import ragas
 from eval.metrics.retrieval import mrr, recall_at_k
-from eval.schema import GoldItem, ItemResult, JudgeScores, RetrievedChunk, RunConfig
+from eval.schema import (
+    CriterionResult,
+    GoldItem,
+    ItemResult,
+    JudgeScores,
+    RetrievedChunk,
+    RunConfig,
+)
 from rag.chain import INSUFFICIENT_MESSAGE, RagAnswer, answer_question, format_context
 from rag.config import settings
 
@@ -108,6 +115,9 @@ def build_run_config(
         min_chunk_chars=settings.min_chunk_chars,
         top_k=settings.top_k,
         similarity_threshold=settings.similarity_threshold,
+        retrieval_mode=settings.retrieval_mode,
+        bm25_tokenizer=settings.bm25_tokenizer,
+        prompt_mode=settings.prompt_mode,
         prompt_hashes=prompt_hashes(),
         gold_set_hash=gold_hash(),
         gold_set_size=gold_size,
@@ -147,14 +157,28 @@ def judge_item(
             scores.errors.append(f"{name}: {type(e).__name__}: {e}")
             return None
 
-    r = guarded(
-        "correctness",
-        lambda: corr.correctness(
-            judge, gold.question, result.answer, gold.acceptance_criteria
-        ),
-    )
-    if r:
-        scores.correctness, scores.criteria = r
+    if not answered:
+        # 거부 응답의 Correctness 는 규칙으로 확정: 답 있는 질의 거부 = 0, 답 없는 질의 거부 = 1.
+        # (Judge 가 부정 조건 규칙을 잘못 적용해 거부 응답을 통과시킨 사례가 있어 규칙으로 고정)
+        scores.correctness = 1.0 if not gold.answerable else 0.0
+        scores.criteria = [
+            CriterionResult(
+                text=c.text,
+                required=c.required,
+                passed=not gold.answerable,
+                reason="규칙: 거부 응답",
+            )
+            for c in gold.acceptance_criteria
+        ]
+    else:
+        r = guarded(
+            "correctness",
+            lambda: corr.correctness(
+                judge, gold.question, result.answer, gold.acceptance_criteria
+            ),
+        )
+        if r:
+            scores.correctness, scores.criteria = r
 
     if answered and result.retrieved:
         r = guarded(
@@ -217,8 +241,11 @@ def evaluate_item(
         llm_called=result.llm_called,
         retrieved=retrieved,
         cited_indices=[c.index for c in result.citations],
+        quotes=list(getattr(result, "quotes", [])),
+        gate_score=getattr(result, "gate_score", None),
         evidence_pages=gold.evidence_pages,
         recall_at_k=recall_at_k(gold.evidence_pages, pages),
+        recall_at_3=recall_at_k(gold.evidence_pages, pages, k=3),
         mrr=mrr(gold.evidence_pages, pages),
     )
     if judges:

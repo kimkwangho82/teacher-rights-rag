@@ -12,13 +12,14 @@ from eval.schema import ItemResult, MetricSummary, Report, RunConfig
 
 METRICS = {
     "recall_at_k": lambda it: it.recall_at_k,
+    "recall_at_3": lambda it: it.recall_at_3,
     "mrr": lambda it: it.mrr,
     "context_relevance": lambda it: it.judge.context_relevance,
     "faithfulness": lambda it: it.judge.faithfulness,
     "correctness": lambda it: it.judge.correctness,
     "answer_relevance": lambda it: it.judge.answer_relevance,
 }
-RETRIEVAL = ("recall_at_k", "mrr", "context_relevance")
+RETRIEVAL = ("recall_at_k", "recall_at_3", "mrr", "context_relevance")
 GENERATION = ("faithfulness", "correctness", "answer_relevance")
 
 # 이진화 임계값 (human alignment 비교용)
@@ -165,6 +166,9 @@ def to_markdown(r: Report) -> str:
         "min_chunk_chars",
         "top_k",
         "similarity_threshold",
+        "retrieval_mode",
+        "bm25_tokenizer",
+        "prompt_mode",
         "gold_set_hash",
         "gold_set_size",
         "index_chunks",
