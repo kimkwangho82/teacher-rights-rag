@@ -345,18 +345,14 @@ make eval-compare A=eval/reports/baseline_x B=eval/reports/exp_y   # Before/Afte
 
 ### CI 연동 설계
 
-Eval 파이프라인을 회귀 방지 장치로 쓰려면 비용과 비결정성을 통제해야 한다. 제안하는 구성:
+`.github/workflows/eval.yml` 은 PR 과 `main` push 마다 **Unit** 단계를 실행한다.
 
-| 단계  | 트리거                                                            | 내용                                                                                                                                                                   | 비용 통제                                                                    |
-| ----- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Unit  | 모든 PR                                                           | `pytest` (지표 함수, 캐시 키, 리포트 생성 — LLM 호출 없음) + `ruff`                                                                                                    | 0                                                                            |
-| Smoke | 모든 PR                                                           | `eval.run --subset 7 --no-judge` → Recall@K·Abstain 만 검사. 임계값(예: Recall@5 ≥ baseline − 0.1, 답 없는 질의 거부율 = 100%) 미달 시 실패                            | 생성 7회 + 임베딩                                                            |
-| Full  | `main` 머지 후 야간 1회, 또는 `eval/`·`rag/` 변경 PR 에 수동 라벨 | `eval.run --repeat 2` 전체 → `compare.py` 로 직전 baseline 과 diff 를 PR 코멘트에 게시                                                                                 | Judge 캐시를 GitHub Actions cache 에 보존해 변경 없는 문항은 재채점하지 않음 |
-| Gate  | Full 결과                                                         | Correctness·Faithfulness 가 baseline 대비 −0.05 이상 하락하거나 hallucination(답 없는 질의 답변) 건수가 증가하면 실패. 단일 실행 변동(±0.03)보다 큰 폭만 게이트로 사용 |                                                                              |
+| 단계 | 트리거 | 내용 | 비용 |
+|---|---|---|---|
+| Unit | 모든 PR, `main` push | `uv sync` → `ruff check` → `pytest` (지표 함수, Judge 캐시 키, 리포트 생성, 청킹, abstain·hybrid·evidence-first 로직 등 75개. LLM 호출 없음) | 0 |
 
-- 프롬프트·Gold Set 해시가 바뀐 PR 은 baseline 갱신 PR 로 취급해 게이트를 건너뛰고 새 baseline 을 커밋한다.
-- API 키는 저장소 secret 으로만 주입하고 fork PR 에서는 Smoke/Full 을 실행하지 않는다.
-- `.github/workflows/eval.yml` 에 Unit 단계와 수동 트리거 Smoke 를 구현해 두었다. Full 단계는 크레딧 사정에 따라 스케줄을 켜는 것을 전제로 설계만 기록한다.
+- 지표 함수와 파이프라인 로직은 Fake LLM·Fake 벡터스토어로 테스트하므로 API 키 없이 실행되고, 프롬프트·집계 규칙 변경으로 인한 회귀는 이 단계에서 잡힌다.
+- LLM 을 실제로 호출하는 평가(Gold Set 실행, Judge 채점)는 비용과 비결정성 때문에 CI 에 넣지 않고 로컬에서 `make eval` 로 실행한 뒤 리포트를 커밋한다.
 
 ## 개선 실험
 

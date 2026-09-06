@@ -22,4 +22,3 @@ __pycache__/
 eval/cache/
 eval/reports/smoke_*/
 eval/reports/nojudge_*/
-eval/reports/ci-smoke/
