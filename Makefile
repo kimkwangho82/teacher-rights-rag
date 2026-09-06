@@ -7,7 +7,7 @@ HOST    ?= 0.0.0.0
 Q       ?= 교육활동 침해 사안 발생 시 학교장의 조치 절차는?
 
 .DEFAULT_GOAL := help
-.PHONY: help install env ingest ingest-reset ingest-dry serve dev test lint format ask health eval eval-smoke eval-nojudge eval-compare clean clean-index
+.PHONY: help install env ingest ingest-reset ingest-dry serve dev test lint format ask health eval eval-smoke eval-nojudge eval-compare eval-exp1 eval-exp2 eval-exp3 eval-rebuild clean clean-index
 
 help: ## 타겟 목록 출력
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -62,8 +62,20 @@ eval-smoke: ## 유형별 1개씩 7개만 평가 (빠른 확인)
 eval-nojudge: ## 규칙 기반 지표만 (Judge 호출 없음)
 	$(UV) run python -m eval.run --name $(or $(NAME),nojudge) --no-judge
 
-eval-compare: ## 두 리포트 비교 (make eval-compare A=eval/reports/x B=eval/reports/y)
-	$(UV) run python -m eval.compare $(A) $(B)
+eval-compare: ## 리포트 비교, 여러 개면 평균 (make eval-compare A="eval/reports/baseline-*" B="eval/reports/exp1-*")
+	$(UV) run python -m eval.compare --before $(A) --after $(B)
+
+eval-exp1: ## 개선 실험 1: hybrid 검색 (make eval-exp1 NAME=exp1-hybrid-a)
+	RETRIEVAL_MODE=hybrid $(UV) run python -m eval.run --name $(or $(NAME),exp1-hybrid)
+
+eval-exp2: ## 개선 실험 2: evidence-first 프롬프트 (make eval-exp2 NAME=exp2-evidence-a)
+	PROMPT_MODE=evidence_first $(UV) run python -m eval.run --name $(or $(NAME),exp2-evidence)
+
+eval-exp3: ## 개선 실험 3: hybrid + Kiwi 형태소 BM25 (make eval-exp3 NAME=exp3-kiwi-a)
+	RETRIEVAL_MODE=hybrid BM25_TOKENIZER=kiwi $(UV) run python -m eval.run --name $(or $(NAME),exp3-kiwi)
+
+eval-rebuild: ## 기존 리포트를 현재 집계 규칙으로 재집계 (make eval-rebuild DIRS="eval/reports/baseline-*")
+	$(UV) run python -m eval.rebuild $(DIRS)
 
 clean: ## 캐시/임시 파일 삭제
 	find . -type d -name __pycache__ -not -path './.venv/*' -exec rm -rf {} +

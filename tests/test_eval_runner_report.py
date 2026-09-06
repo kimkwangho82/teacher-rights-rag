@@ -166,3 +166,77 @@ def test_human_alignment(tmp_path):
     h = human_alignment(items, labels)
     assert h["faithfulness_n"] == 2 and h["faithfulness_agreement"] == 0.5
     assert h["correctness_n"] == 1 and h["correctness_agreement"] == 1.0
+
+
+def test_abstained_answer_correctness_is_rule_based(monkeypatch):
+    """거부 응답은 Judge 를 부르지 않고 규칙으로 correctness 를 정한다."""
+    from eval import runner
+
+    calls = []
+
+    class NoJudge:
+        def ask(self, *a, **k):
+            calls.append(a)
+            return {}
+
+    answerable_item = evaluate_item(
+        gold("a", pages=(45,)),
+        [NoJudge()],
+        answer_fn=fake_answer(status="insufficient"),
+    )
+    unanswerable_item = evaluate_item(
+        gold("b", answerable=False, pages=(), type_="unanswerable_in"),
+        [NoJudge()],
+        answer_fn=fake_answer(status="insufficient"),
+    )
+    assert (
+        answerable_item.judge.correctness == 0.0
+        and unanswerable_item.judge.correctness == 1.0
+    )
+    assert all(c.reason == "규칙: 거부 응답" for c in answerable_item.judge.criteria)
+    # context_relevance 만 judge 호출 (과잉 거부의 검색 문맥 진단용)
+    assert all(a[0] == "context_relevance" for a in calls)
+    assert runner is not None
+
+
+def test_rebuild_normalizes_abstained_correctness(tmp_path):
+    from eval.rebuild import rebuild
+
+    items = [
+        evaluate_item(
+            gold("q001", pages=(45,)),
+            None,
+            answer_fn=fake_answer(status="insufficient"),
+        )
+    ]
+    items[0].judge = JudgeScores(
+        correctness=1.0,
+        criteria=[{"text": "c", "required": True, "passed": True, "reason": "오판"}],
+    )
+    write_report(build_report(cfg(), items), tmp_path)
+    rebuild(tmp_path)
+    data = json.loads((tmp_path / "report.json").read_text())
+    assert data["overall"]["correctness"]["mean"] == 0.0
+
+
+def test_rebuild_recomputes_retrieval_metrics_from_current_gold(tmp_path, monkeypatch):
+    from eval import rebuild as rb
+
+    items = [
+        evaluate_item(
+            gold("q001", pages=(99,)), None, answer_fn=fake_answer(pages=(45, 46))
+        )
+    ]
+    assert items[0].recall_at_k == 0.0
+    write_report(build_report(cfg(), items), tmp_path)
+    monkeypatch.setattr(
+        rb, "load_gold", lambda: [gold("q001", pages=(46,))]
+    )  # gold 가 46 으로 바뀜
+    monkeypatch.setattr(rb, "gold_hash", lambda: "newhash")
+    rb.rebuild(tmp_path)
+    data = json.loads((tmp_path / "report.json").read_text())
+    assert (
+        data["overall"]["recall_at_k"]["mean"] == 1.0
+        and data["overall"]["mrr"]["mean"] == 0.5
+    )
+    assert data["config"]["gold_set_hash"] == "newhash"
